@@ -30,7 +30,9 @@ CloseApplications=yes
 ShowLanguageDialog=auto
 
 [Languages]
+#if FileExists(AddBackslash(CompilerPath) + "Languages\Arabic.isl")
 Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
+#endif
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
