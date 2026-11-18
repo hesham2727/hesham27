@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: fbo, POSTGRES_PASSWORD: fbo, POSTGRES_DB: fbotest }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: System libraries for Qt (offscreen)
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Install Python dependencies
+        run: pip install -r backend/requirements.txt -r desktop/requirements.txt pytest pytest-qt pypdf "psycopg[binary]"
+      - name: Backend tests (SQLite)
+        run: python -m pytest backend/tests -q
+      - name: Backend tests (PostgreSQL)
+        env: { FBO_TEST_DATABASE_URL: "postgresql+psycopg://fbo:fbo@127.0.0.1:5432/fbotest" }
+        run: python -m pytest backend/tests -q
+      - name: Frontend typecheck, unit tests, build
+        working-directory: frontend
+        run: npm ci && npx tsc -b && npx vitest run && npx vite build
+      - name: Browser end-to-end tests
+        working-directory: frontend
+        run: |
+          npm i --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+          node e2e/run-e2e.mjs
+      - name: Desktop tests
+        env: { QT_QPA_PLATFORM: offscreen }
+        run: python -m pytest desktop/tests -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: e2e-screenshots, path: frontend/test-results }
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt -r desktop/requirements.txt pytest pytest-qt pypdf pyinstaller
+      - name: Build web UI
+        working-directory: frontend
+        run: npm ci && npx vite build
+      - name: Backend + desktop tests on Windows
+        env: { QT_QPA_PLATFORM: offscreen }
+        run: python -m pytest backend/tests desktop/tests -q
+      - name: PyInstaller build
+        run: pyinstaller packaging/fbosint.spec --noconfirm
+      - name: Self-test of the packaged desktop executable
+        shell: pwsh
+        run: |
+          $env:FBO_SELFTEST_LOG = "$PWD\dist\selftest.log"
+          $p = Start-Process -FilePath dist\FBOSINT\FBOSINT.exe -ArgumentList "--self-test" -Wait -PassThru
+          Get-Content dist\selftest.log
+          if ($p.ExitCode -ne 0) { throw "packaged self-test failed ($($p.ExitCode))" }
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\installer.iss
+          Get-ChildItem dist\installer
+      - name: Install silently on the clean runner and test the installed application
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist\installer\FBOSINT-Setup-*.exe).FullName
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/DIR=C:\FBOSINT-test","/TASKS=desktopicon","/LOG=C:\install.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content C:\install.log; throw "installer failed" }
+          if (-not (Test-Path "C:\FBOSINT-test\FBOSINT.exe")) { throw "FBOSINT.exe not installed" }
+          $lnk = Get-ChildItem "$env:USERPROFILE\Desktop","$env:PUBLIC\Desktop" -Filter "FBOSINT*.lnk" -ErrorAction SilentlyContinue
+          if (-not $lnk) { throw "desktop shortcut missing" }
+          Write-Host "Desktop shortcut: $($lnk.FullName)"
+          $env:FBO_SELFTEST_LOG = "C:\installed-selftest.log"
+          $p = Start-Process "C:\FBOSINT-test\FBOSINT.exe" -ArgumentList "--self-test" -Wait -PassThru
+          Get-Content C:\installed-selftest.log
+          if ($p.ExitCode -ne 0) { throw "installed self-test failed" }
+          $env:FBO_DATA_DIR = "C:\fbo-server-test"
+          $srv = Start-Process "C:\FBOSINT-test\FBOSINT-Server.exe" -ArgumentList "serve","--port","8799" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) { Start-Sleep 1; try { $h = Invoke-RestMethod http://127.0.0.1:8799/api/health; $ok = $h.status -eq "ok" } catch {} }
+          if (-not $ok) { throw "installed server did not start" }
+          $html = (Invoke-WebRequest http://127.0.0.1:8799/ -UseBasicParsing).Content
+          if ($html -notmatch 'dir="rtl"') { throw "web UI not served" }
+          Stop-Process $srv
+          & "C:\FBOSINT-test\FBOSINT-Server.exe" backup
+          if ($LASTEXITCODE -ne 0) { throw "backup utility failed" }
+          $un = Start-Process "C:\FBOSINT-test\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait -PassThru
+          Start-Sleep 3
+          if (Test-Path "C:\FBOSINT-test\FBOSINT.exe") { throw "uninstall failed" }
+          Write-Host "Install / run / uninstall verified on clean Windows runner"
+      - uses: actions/upload-artifact@v4
+        with: { name: FBOSINT-Windows-Installer, path: dist/installer/*.exe }
+      - uses: actions/upload-artifact@v4
+        with: { name: FBOSINT-Windows-Portable, path: dist/FBOSINT }

@@ -129,8 +129,8 @@ def list_investigations(
     stmt = select(Investigation)
     if q:
         stmt = stmt.where(or_(
-            Investigation.reference.contains(q, autoescape=True), Investigation.title.contains(q, autoescape=True),
-            Investigation.target_input.contains(q, autoescape=True), Investigation.identifier.contains(q, autoescape=True),
+            Investigation.reference.icontains(q, autoescape=True), Investigation.title.icontains(q, autoescape=True),
+            Investigation.target_input.icontains(q, autoescape=True), Investigation.identifier.icontains(q, autoescape=True),
         ))
     if status_filter:
         stmt = stmt.where(Investigation.status == status_filter)
@@ -299,7 +299,7 @@ def list_posts(
     if q:
         terms = [t for t in q.split() if t][:8]
         for t in terms:
-            stmt = stmt.where(or_(Post.message.contains(t, autoescape=True), Post.shared_link.contains(t, autoescape=True)))
+            stmt = stmt.where(or_(Post.message.icontains(t, autoescape=True), Post.shared_link.icontains(t, autoescape=True)))
     if date_from:
         stmt = stmt.where(Post.created_time >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
     if date_to:

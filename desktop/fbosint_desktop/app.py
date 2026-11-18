@@ -72,6 +72,21 @@ def run_gui() -> int:
     return code
 
 
+def _check(cond, msg="self-test assertion failed") -> None:
+    if not cond:
+        raise RuntimeError(str(msg))
+
+
+def _report(text: str) -> None:
+    """Windowed builds have no console: also write to FBO_SELFTEST_LOG if given."""
+    log = os.environ.get("FBO_SELFTEST_LOG")
+    if log:
+        with open(log, "w", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+    if sys.stdout is not None:
+        print(text)
+
+
 def self_test() -> int:
     """Exercise the packaged application end to end without user interaction."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -91,7 +106,7 @@ def self_test() -> int:
         srv.start()
         steps.append("local server started")
         api = ApiClient(srv.url)
-        assert api.needs_setup()
+        _check(api.needs_setup())
         api.setup("admin", "SelfTest12345", "Self Test")
         api.login("admin", "SelfTest12345")
         steps.append("setup + login")
@@ -102,11 +117,11 @@ def self_test() -> int:
                 break
             import time
             time.sleep(0.2)
-        assert inv["status"] in ("partial", "completed"), inv["status"]
+        _check(inv["status"] in ("partial", "completed"), inv["status"])
         steps.append(f"investigation {inv['reference']} -> {inv['status']}")
         pdf, _ = api.download(f"/api/investigations/{inv['id']}/report", format="pdf", lang="ar")
         xlsx, _ = api.download(f"/api/investigations/{inv['id']}/report", format="xlsx", lang="en")
-        assert pdf[:4] == b"%PDF" and xlsx[:2] == b"PK"
+        _check(pdf[:4] == b"%PDF" and xlsx[:2] == b"PK")
         steps.append("PDF + Excel export")
         app = QApplication.instance() or QApplication(sys.argv)
         apply_language(app, "ar")
@@ -118,17 +133,16 @@ def self_test() -> int:
             win.navigate(key)
             app.processEvents()
         saved = win.pages["export"].export("pdf", open_after=False)
-        assert saved and saved.exists()
+        _check(saved and saved.exists())
         steps.append("all desktop pages rendered; report cached for offline use")
         from pathlib import Path
         backups = list((Path(tmp) / "backups").glob("*.zip"))
         steps.append(f"automatic backups: {len(backups)}")
         win.close()
-        print("SELF-TEST OK\n  " + "\n  ".join(steps))
+        _report("SELF-TEST OK\n  " + "\n  ".join(steps))
         return 0
     except Exception:
-        print("SELF-TEST FAILED after: " + " | ".join(steps))
-        traceback.print_exc()
+        _report("SELF-TEST FAILED after: " + " | ".join(steps) + "\n" + traceback.format_exc())
         return 1
     finally:
         srv.stop()

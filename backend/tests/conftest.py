@@ -14,7 +14,8 @@ from fbosint.security.ratelimit import limiter  # noqa: E402
 def settings(tmp_path):
     env = {
         "FBO_DATA_DIR": str(tmp_path / "data"),
-        "FBO_DATABASE_URL": f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+        # Set FBO_TEST_DATABASE_URL=postgresql+psycopg://... to run the whole suite on PostgreSQL
+        "FBO_DATABASE_URL": os.environ.get("FBO_TEST_DATABASE_URL") or f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
         "FBO_RUN_JOBS_INLINE": "1",
         "FBO_SCHEDULER_ENABLED": "0",
         "FBO_ENV": "test",
@@ -26,9 +27,15 @@ def settings(tmp_path):
     limiter.reset()
     from fbosint.database import create_all, init_engine
 
-    init_engine(s)
+    from fbosint.database import Base
+
+    engine = init_engine(s)
+    if not s.is_sqlite:
+        from fbosint import models  # noqa: F401
+        Base.metadata.drop_all(engine)
     create_all()
     yield s
+    engine.dispose()
     set_settings(None)
 
 

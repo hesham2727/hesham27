@@ -343,7 +343,8 @@ class InvestigationRunner:
         self.db.commit()
 
     def _collect_posts(self, oid: str, is_me: bool, limit: int, comments: bool) -> None:
-        assert self.graph is not None
+        if self.graph is None:
+            return
         limit = min(limit, self.settings.max_posts)
         if limit <= 0:
             return
@@ -384,7 +385,8 @@ class InvestigationRunner:
             self.event("graph_comments", "Public comments collected where permitted")
 
     def _collect_photos(self, oid: str) -> None:
-        assert self.graph is not None
+        if self.graph is None:
+            return
         try:
             items, url = self.graph.photos(oid, 50)
         except GraphError as e:

@@ -113,8 +113,31 @@ class Settings:
         return self.encryption_key
 
 
+def read_env_file(path: Path) -> dict[str, str]:
+    """Minimal .env parser (KEY=VALUE, # comments). Never overrides real environment variables."""
+    out: dict[str, str] = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
 def load_settings(env: dict[str, str] | None = None) -> Settings:
-    e = os.environ if env is None else env
+    if env is None:
+        e: dict[str, str] = {}
+        base_dir = Path(os.environ.get("FBO_DATA_DIR") or default_data_dir()).expanduser()
+        for candidate in (base_dir / ".env", Path.cwd() / ".env"):
+            if candidate.is_file():
+                e.update(read_env_file(candidate))
+        e.update(os.environ)
+    else:
+        e = env
     data_dir = Path(e.get("FBO_DATA_DIR") or default_data_dir()).expanduser()
     s = Settings(
         env=e.get("FBO_ENV", "production"),

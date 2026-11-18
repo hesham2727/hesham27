@@ -1,0 +1,27 @@
+# Network-mode deployment with PostgreSQL.  Usage (from repository root):
+#   cp .env.example docker/.env   # set FBO_ENCRYPTION_KEY and POSTGRES_PASSWORD
+#   docker compose -f docker/docker-compose.yml up -d --build
+#   docker compose -f docker/docker-compose.yml exec app python -m fbosint.cli create-admin admin
+services:
+  db:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: fbosint
+      POSTGRES_USER: fbosint
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U fbosint"], interval: 5s, retries: 10 }
+    restart: unless-stopped
+  app:
+    build: { context: .., dockerfile: docker/Dockerfile }
+    env_file: [.env]
+    environment:
+      FBO_DATABASE_URL: postgresql+psycopg://fbosint:${POSTGRES_PASSWORD}@db:5432/fbosint
+      FBO_MODE: network
+    volumes: [appdata:/data]
+    ports: ["8765:8765"]
+    depends_on: { db: { condition: service_healthy } }
+    restart: unless-stopped
+volumes:
+  pgdata:
+  appdata:

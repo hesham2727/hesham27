@@ -46,7 +46,8 @@ def init_engine(settings: Settings | None = None) -> Engine:
 def get_engine() -> Engine:
     if _engine is None:
         init_engine()
-    assert _engine is not None
+    if _engine is None:  # pragma: no cover
+        raise RuntimeError("database_not_initialised")
     return _engine
 
 
@@ -59,7 +60,8 @@ def create_all() -> None:
 def SessionLocal() -> Session:  # noqa: N802 - factory-style name
     if _SessionLocal is None:
         init_engine()
-    assert _SessionLocal is not None
+    if _SessionLocal is None:  # pragma: no cover
+        raise RuntimeError("database_not_initialised")
     return _SessionLocal()
 
 
