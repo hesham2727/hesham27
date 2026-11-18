@@ -53,6 +53,8 @@ class SourceType(str, enum.Enum):
     official_website = "official_website"
     manual = "manual"
     input_url = "input_url"
+    analysis = "analysis"
+    investigator_upload = "investigator_upload"
 
 
 class Availability(str, enum.Enum):
