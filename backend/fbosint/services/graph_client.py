@@ -179,7 +179,7 @@ class MetaGraphClient:
                     data = resp.json()
                 except ValueError as exc:
                     raise GraphError("invalid_json_response") from exc
-                return GraphResult(data=data, url=str(resp.request.url.copy_remove_param("access_token").copy_remove_param("appsecret_proof")), usage=usage)
+                return GraphResult(data=data, url=url, usage=usage)  # attribution URL: endpoint path only, never tokens
             # transient server errors: limited retry; rate limits are NOT retried aggressively
             if resp.status_code >= 500 and attempt < self.max_retries:
                 attempt += 1
