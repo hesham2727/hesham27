@@ -1,0 +1,14 @@
+.venv/
+.venv-build/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/*.db
+*.db-shm
+*.db-wal
+frontend/node_modules/
+frontend/dist/
+dist/
+build/
+*.spec.bak
+.env

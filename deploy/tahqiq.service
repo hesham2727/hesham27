@@ -1,0 +1,20 @@
+# systemd unit for a Linux VPS / server. Copy to /etc/systemd/system/tahqiq.service
+[Unit]
+Description=Tahqiq web application
+After=network.target
+
+[Service]
+User=tahqiq
+WorkingDirectory=/opt/tahqiq/backend
+Environment=TAHQIQ_MODE=server
+Environment=TAHQIQ_DATA_DIR=/var/lib/tahqiq
+Environment=TAHQIQ_PUBLIC_BASE_URL=https://tahqiq.example.com
+Environment=TAHQIQ_TRUST_PROXY=1
+ExecStart=/opt/tahqiq/.venv/bin/python -m app.serve --host 127.0.0.1 --port 8000 --proxy-headers
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/tahqiq
+
+[Install]
+WantedBy=multi-user.target

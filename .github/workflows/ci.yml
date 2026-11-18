@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: pip install -r backend/requirements-dev.txt
+      - run: cd backend && python -m pytest
+      - run: cd frontend && npm ci && npm run build
+
+  windows-installer:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: pip install -r backend/requirements-desktop.txt
+      - run: cd frontend && npm ci && npm run build
+        shell: bash
+      - run: pyinstaller desktop/tahqiq.spec --noconfirm --distpath dist --workpath build
+      - name: Build installer (Inno Setup is pre-installed on windows-latest runners)
+        run: iscc desktop\installer.iss
+        shell: cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tahqiq-Windows-Installer
+          path: dist/installer/*.exe
