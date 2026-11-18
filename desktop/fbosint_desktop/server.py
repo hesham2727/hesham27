@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 import threading
 import time
 
@@ -51,7 +52,8 @@ class LocalServer:
         set_settings(load_settings(env))
         from fbosint.main import create_app
 
-        config = uvicorn.Config(create_app(), host="127.0.0.1", port=self.port, log_level="warning", server_header=False)
+        console = sys.stdout is not None and sys.stderr is not None and hasattr(sys.stderr, "isatty")
+        config = uvicorn.Config(create_app(), host="127.0.0.1", port=self.port, log_level="warning", server_header=False, **({} if console else {"log_config": None}))
         self.server = uvicorn.Server(config)
         self.thread = threading.Thread(target=self.server.run, name="fbosint-local-server", daemon=True)
         self.thread.start()

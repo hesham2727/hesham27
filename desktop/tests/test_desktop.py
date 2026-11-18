@@ -167,3 +167,17 @@ def test_shared_dictionary_used():
     i18n.set_lang("ar")
     assert i18n.t("nav.dashboard") == "لوحة التحقيقات"
     assert i18n.enum("status", "partial") == "جزئي"
+
+
+def test_windowed_build_without_console(tmp_path):
+    """Regression: windowed Windows builds run with sys.stdout/stderr = None."""
+    import os, subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    code = ("import sys, runpy; sys.stdout = None; sys.stderr = None; sys.argv = ['FBOSINT', '--self-test']\n"
+            "try:\n    runpy.run_path(r'%s', run_name='__main__')\nexcept SystemExit as e:\n    open(r'%s', 'w').write(str(e.code))\n") % (root / "desktop" / "run_desktop.py", tmp_path / "rc")
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "FBO_SELFTEST_LOG": str(tmp_path / "st.log"), "FBO_DATA_DIR": str(tmp_path / "d")}
+    subprocess.run([sys.executable, "-c", code], env=env, timeout=240, check=False)
+    assert (tmp_path / "rc").read_text() == "0", (tmp_path / "st.log").read_text() if (tmp_path / "st.log").exists() else "no log"
+    assert "SELF-TEST OK" in (tmp_path / "st.log").read_text()
+    assert (tmp_path / "d" / "logs" / "desktop.log").exists()

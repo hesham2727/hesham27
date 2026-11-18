@@ -30,6 +30,11 @@ async function step(name, fn) {
   }
 }
 const assert = (c, m) => { if (!c) throw new Error(m); };
+// Polls from the test side (no in-page eval: the app's CSP forbids 'unsafe-eval', as it should).
+async function poll(fn, msg, tries = 50) {
+  for (let i = 0; i < tries; i++) { if (await fn()) return; await new Promise((r) => setTimeout(r, 200)); }
+  throw new Error(msg);
+}
 
 async function waitHealth() {
   for (let i = 0; i < 60; i++) {
@@ -94,7 +99,7 @@ try {
     await page.getByText("Skylight delivered").waitFor();
     await page.getByTestId("posts-search").fill("glazing");
     await page.getByTestId("posts-search").press("Enter");
-    await page.waitForFunction(() => document.querySelectorAll(".post").length === 1);
+    await poll(async () => (await page.locator(".post").count()) === 1, "search did not filter posts");
     assert(await page.getByText("Structural glazing installation").isVisible(), "filtered post visible");
   });
 
@@ -113,7 +118,8 @@ try {
     const before = await page.locator(".media-card").count();
     await page.getByTestId("media-file").setInputFiles({ name: "evidence.png", mimeType: "image/png", buffer: png });
     await page.getByRole("button", { name: "إضافة", exact: true }).click();
-    await page.waitForFunction((n) => document.querySelectorAll(".media-card").length === n + 1, before);
+    for (let i = 0; i < 50 && (await page.locator(".media-card").count()) !== before + 1; i++) await page.waitForTimeout(200);
+    assert((await page.locator(".media-card").count()) === before + 1, "uploaded image not shown");
     await page.screenshot({ path: join(shots, "06-media-ar.png"), fullPage: true });
   });
 
@@ -175,7 +181,7 @@ try {
     await page.getByTestId("nav-history").click();
     await page.getByTestId("history-search").fill("qusoor");
     await page.getByTestId("history-search").press("Enter");
-    await page.waitForFunction(() => document.querySelectorAll("tbody tr").length === 1);
+    await poll(async () => (await page.locator("tbody tr").count()) === 1, "history search did not filter");
   });
 
   await step("responsive mobile layout has no horizontal overflow", async () => {

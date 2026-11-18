@@ -13,7 +13,8 @@ jobs:
         image: postgres:16
         env: { POSTGRES_USER: fbo, POSTGRES_PASSWORD: fbo, POSTGRES_DB: fbotest }
         ports: ["5432:5432"]
-        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+        options: >-
+          --health-cmd "pg_isready -U fbo" --health-interval 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
