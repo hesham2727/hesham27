@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fbosint"
+version = "1.0.0"
+description = "Facebook Public Profile Intelligence & OSINT Analyzer (official-API only)"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "sqlalchemy>=2.0",
+  "pydantic>=2.7",
+  "httpx>=0.27",
+  "cryptography>=42",
+  "pillow>=10.3",
+  "numpy>=1.26",
+  "reportlab>=4.1",
+  "openpyxl>=3.1",
+  "arabic-reshaper>=3.0",
+  "python-bidi>=0.4",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+dev = ["pytest>=8", "pytest-qt>=4.4"]
+
+[project.scripts]
+fbosint = "fbosint.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fbosint*"]
+
+[tool.setuptools.package-data]
+fbosint = ["assets/*.ttf", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
