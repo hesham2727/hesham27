@@ -45,7 +45,7 @@ Full instructions (Arabic): [docs/INSTALL_AR.md](docs/INSTALL_AR.md). User manua
 ```bash
 python -m pytest backend/tests -q                       # 76 tests (SQLite)
 FBO_TEST_DATABASE_URL=postgresql+psycopg://u:p@host/db python -m pytest backend/tests -q   # same on PostgreSQL
-QT_QPA_PLATFORM=offscreen python -m pytest desktop/tests -q   # 8 tests
+QT_QPA_PLATFORM=offscreen python -m pytest desktop/tests -q   # 9 tests
 cd frontend && npx tsc -b && npx vitest run && node e2e/run-e2e.mjs   # 6 unit + 17 browser E2E steps
 FBOSINT.exe --self-test                                  # packaged-application smoke test
 ```
