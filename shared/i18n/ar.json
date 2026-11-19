@@ -261,5 +261,10 @@
   "count.comments": "التعليقات",
   "count.media": "الوسائط",
   "count.sources": "المصادر",
-  "count.verified": "الموثقة"
+  "count.verified": "الموثقة",
+  "startup.starting": "جارٍ تشغيل FBOSINT…",
+  "startup.failed": "تعذر على البرنامج الاتصال بالخادم الخاص به.",
+  "startup.log": "سجل التشخيص",
+  "startup.retry": "إعادة المحاولة",
+  "startup.offline": "المتابعة دون اتصال"
 }

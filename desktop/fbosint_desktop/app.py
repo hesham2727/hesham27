@@ -7,13 +7,19 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import logging.handlers
 import os
 import sys
 import tempfile
 import traceback
+from dataclasses import dataclass
+from pathlib import Path
 
 from . import __version__, i18n
-from .settings import DesktopConfig
+from .client import ApiClient, ApiError
+from .server import LocalServer
+from .settings import DesktopConfig, data_dir
 
 
 def _verify(cfg: DesktopConfig):
@@ -22,43 +28,103 @@ def _verify(cfg: DesktopConfig):
     return cfg.verify_tls
 
 
-def run_gui() -> int:
-    from PySide6.QtWidgets import QApplication, QMessageBox
+def log_path() -> Path:
+    return data_dir() / "logs" / "desktop.log"
 
-    from .client import ApiClient, ApiError
-    from .server import LocalServer
+
+def setup_logging() -> Path:
+    """Always keep a diagnostic log: %APPDATA%\\FBOSINT\\logs\\desktop.log (rotated)."""
+    path = log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
+        h = logging.handlers.RotatingFileHandler(path, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
+        h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        root.addHandler(h)
+        root.setLevel(logging.INFO)
+    return path
+
+
+@dataclass
+class Connection:
+    api: ApiClient | None
+    server: LocalServer | None
+    error: str = ""
+
+    @property
+    def online(self) -> bool:
+        return self.api is not None and not self.error
+
+
+def connect_backend(cfg: DesktopConfig, on_wait=None, extra_env: dict[str, str] | None = None) -> Connection:
+    """Shared by the GUI start-up and --self-test, so the tested path is the real one."""
+    log = logging.getLogger("fbosint.desktop")
+    log.info("FBOSINT Desktop %s starting: mode=%s port=%s frozen=%s", __version__, cfg.mode, cfg.local_port, getattr(sys, "frozen", False))
+    server = None
+    if cfg.mode == "local":
+        server = LocalServer(cfg.local_port, extra_env=extra_env)
+        try:
+            server.start(on_wait=on_wait)
+        except Exception as e:  # noqa: BLE001 - shown to the user with the log path
+            log.exception("local server failed to start")
+            return Connection(None, None, f"local_server: {e}")
+        if server.port != cfg.local_port:  # configured port was taken by another program
+            cfg.local_port = server.port
+            try:
+                cfg.save()
+            except OSError:
+                log.warning("could not save desktop.json")
+        log.info("local server ready at %s (reused existing: %s)", server.url, server.reused_existing)
+    api = ApiClient(cfg.base_url(), verify=_verify(cfg))
+    try:
+        api.health()
+    except ApiError as e:
+        log.error("health check failed for %s: %s", cfg.base_url(), e.code)
+        return Connection(api, server, f"{cfg.base_url()}: {e.code}")
+    return Connection(api, server)
+
+
+def run_gui() -> int:
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
+
     from .ui import LoginDialog, MainWindow, apply_language, icon
 
+    setup_logging()
     cfg = DesktopConfig.load()
     app = QApplication(sys.argv)
     app.setApplicationName("FBOSINT Analyzer")
     app.setWindowIcon(icon())
     apply_language(app, cfg.language)
-    server = None
-    if cfg.mode == "local":
-        server = LocalServer(cfg.local_port)
-        try:
-            server.start()
-        except Exception as e:
-            QMessageBox.critical(None, "FBOSINT", f"Local server could not start: {e}")
-            server = None
-    api = ApiClient(cfg.base_url(), verify=_verify(cfg))
-    try:
-        api.health()
-        online = True
-    except ApiError:
-        online = False
+    t = i18n.t
+    while True:
+        splash = QSplashScreen(icon().pixmap(256, 256))
+        splash.show()
+        splash.showMessage(t("startup.starting"), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, Qt.GlobalColor.white)
+        app.processEvents()
+        conn = connect_backend(cfg, on_wait=app.processEvents)
+        splash.close()
+        if conn.online:
+            break
+        box = QMessageBox(QMessageBox.Icon.Warning, t("app.name"), f"{t('startup.failed')}\n\n{conn.error}\n\n{t('startup.log')}:\n{log_path()}")
+        retry = box.addButton(t("startup.retry"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(t("startup.offline"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is not retry:
+            break
+    api, server, online = conn.api, conn.server, conn.online
     if online:
         try:
             dlg = LoginDialog(api, cfg, api.needs_setup())
-        except ApiError:
+        except ApiError as e:
+            QMessageBox.warning(None, t("app.name"), f"{t('startup.failed')}\n{e.code}")
             online = False
     if online:
         if dlg.exec() != dlg.DialogCode.Accepted:
+            if server:
+                server.stop()
             return 0
         apply_language(app, api.user.get("language") or cfg.language)
-    else:
-        QMessageBox.information(None, "FBOSINT", f"{i18n.t('err.network')}\n{cfg.base_url()}\n\nOffline mode: previously exported reports are available.")
     win = MainWindow(api if online else None, cfg, online)
     win.show()
     code = app.exec()
@@ -95,17 +161,18 @@ def self_test() -> int:
     os.environ["FBO_DATA_DIR"] = tmp
     from PySide6.QtWidgets import QApplication
 
-    from .client import ApiClient
-    from .server import LocalServer, port_free
     from .ui import NAV, MainWindow, apply_language
 
-    port = next(p for p in range(18765, 18865) if port_free(p))
+    setup_logging()
     steps = []
-    srv = LocalServer(port, tmp, {"FBO_SCHEDULER_ENABLED": "1", "FBO_BACKUP_INTERVAL_HOURS": "24"})
+    srv = None
+    cfg = DesktopConfig(mode="local", reports_dir=os.path.join(tmp, "reports"))  # default port 8765, like a real first start
     try:
-        srv.start()
-        steps.append("local server started")
-        api = ApiClient(srv.url)
+        conn = connect_backend(cfg, extra_env={"FBO_SCHEDULER_ENABLED": "1", "FBO_BACKUP_INTERVAL_HOURS": "24"})
+        srv = conn.server
+        _check(conn.online, f"start-up path failed: {conn.error}")
+        steps.append(f"local server started on port {srv.port} via the normal start-up path")
+        api = conn.api
         _check(api.needs_setup())
         api.setup("admin", "SelfTest12345", "Self Test")
         api.login("admin", "SelfTest12345")
@@ -125,7 +192,6 @@ def self_test() -> int:
         steps.append("PDF + Excel export")
         app = QApplication.instance() or QApplication(sys.argv)
         apply_language(app, "ar")
-        cfg = DesktopConfig(mode="local", local_port=port, reports_dir=os.path.join(tmp, "reports"))
         win = MainWindow(api, cfg, True)
         win.show()
         win.current_id = inv["id"]
@@ -145,7 +211,8 @@ def self_test() -> int:
         _report("SELF-TEST FAILED after: " + " | ".join(steps) + "\n" + traceback.format_exc())
         return 1
     finally:
-        srv.stop()
+        if srv:
+            srv.stop()
 
 
 def main(argv: list[str] | None = None) -> int:

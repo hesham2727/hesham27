@@ -15,12 +15,29 @@ class ApiError(Exception):
         self.code = code
 
 
+def direct_connection(url: str) -> bool:
+    """True for the built-in server and LAN servers: such requests must never go through a
+    system/corporate proxy (on Windows, httpx reads the Internet Options proxy from the registry,
+    which made http://127.0.0.1 unreachable on machines with a proxy configured)."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(url).hostname or "").strip("[]").lower()
+    if host in ("localhost", "") or host.endswith((".local", ".lan", ".home", ".internal", ".corp")) or "." not in host:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback or ip.is_private or ip.is_link_local
+    except ValueError:
+        return False
+
+
 class ApiClient:
     def __init__(self, base_url: str, verify: bool | str = True, timeout: float = 30.0, transport: httpx.BaseTransport | None = None):
         self.base_url = base_url.rstrip("/")
         self.token = ""
         self.user: dict[str, Any] = {}
-        self.http = httpx.Client(base_url=self.base_url, verify=verify, timeout=timeout, transport=transport, headers={"User-Agent": f"FBOSINT-Desktop/{__version__}"})
+        self.http = httpx.Client(base_url=self.base_url, verify=verify, timeout=timeout, transport=transport, trust_env=not direct_connection(self.base_url), headers={"User-Agent": f"FBOSINT-Desktop/{__version__}"})
 
     def close(self) -> None:
         self.http.close()

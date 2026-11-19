@@ -181,3 +181,61 @@ def test_windowed_build_without_console(tmp_path):
     assert (tmp_path / "rc").read_text() == "0", (tmp_path / "st.log").read_text() if (tmp_path / "st.log").exists() else "no log"
     assert "SELF-TEST OK" in (tmp_path / "st.log").read_text()
     assert (tmp_path / "d" / "logs" / "desktop.log").exists()
+
+
+def _run_isolated(code: str, tmp_path, extra_env: dict | None = None, timeout=240):
+    """Run start-up code in a fresh process (LocalServer sets process-wide settings)."""
+    import os, subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    prelude = f"import sys; sys.path[:0] = [r'{root / 'desktop'}', r'{root / 'backend'}']\n"
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "FBO_DATA_DIR": str(tmp_path / "d"), **(extra_env or {})}
+    return subprocess.run([sys.executable, "-c", prelude + code], env=env, timeout=timeout, capture_output=True, text=True)
+
+
+def test_direct_connection_rules():
+    from fbosint_desktop.client import direct_connection
+    for u in ["http://127.0.0.1:8765", "http://localhost:8765", "https://192.168.1.10:8765", "https://10.0.0.5", "https://fbosint-server:8765", "https://srv.local"]:
+        assert direct_connection(u), u
+    for u in ["https://fbosint.example.com", "https://8.8.8.8"]:
+        assert not direct_connection(u), u
+
+
+def test_startup_with_system_proxy_and_busy_port(tmp_path):
+    """Regression for 'cannot reach the server' on first launch: Windows proxy + port 8765 taken."""
+    import socket
+    blocker = socket.socket()
+    blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    blocker.bind(("127.0.0.1", 8765))
+    blocker.listen()
+    try:
+        r = _run_isolated(
+            "from fbosint_desktop.app import connect_backend, setup_logging\n"
+            "from fbosint_desktop.settings import DesktopConfig\n"
+            "setup_logging(); cfg = DesktopConfig()\n"
+            "c = connect_backend(cfg, extra_env={'FBO_SCHEDULER_ENABLED': '0'})\n"
+            "print('RESULT', c.online, cfg.local_port, c.error)\n"
+            "print('SAVED', DesktopConfig.load().local_port)\n"
+            "c.server.stop()\n",
+            tmp_path, {"HTTP_PROXY": "http://127.0.0.1:9", "http_proxy": "http://127.0.0.1:9", "HTTPS_PROXY": "http://127.0.0.1:9", "NO_PROXY": "", "no_proxy": ""})
+    finally:
+        blocker.close()
+    out = r.stdout
+    assert "RESULT True" in out, r.stdout + r.stderr
+    port = int(out.split("RESULT True ")[1].split()[0])
+    assert port != 8765 and f"SAVED {port}" in out  # moved to a free port and remembered it
+
+
+def test_startup_failure_reports_reason_quickly(tmp_path):
+    import time
+    t0 = time.time()
+    r = _run_isolated(
+        "from fbosint_desktop.app import connect_backend, setup_logging, log_path\n"
+        "from fbosint_desktop.settings import DesktopConfig\n"
+        "setup_logging(); c = connect_backend(DesktopConfig(local_port=19777), extra_env={'FBO_SCHEDULER_ENABLED': '0', 'FBO_DATABASE_URL': 'sqlite:////nonexistent-dir/x/y.db'})\n"
+        "print('RESULT', c.online, '|', c.error); print('LOG', log_path().exists())\n",
+        tmp_path)
+    assert "RESULT False" in r.stdout and "local_server" in r.stdout, r.stdout + r.stderr
+    assert "unable to open database" in r.stdout.lower() or "operationalerror" in r.stdout.lower(), r.stdout
+    assert "LOG True" in r.stdout
+    assert time.time() - t0 < 60  # not the full start-up timeout

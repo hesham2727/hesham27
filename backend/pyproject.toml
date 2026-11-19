@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fbosint"
-version = "1.0.0"
+version = "1.0.1"
 description = "Facebook Public Profile Intelligence & OSINT Analyzer (official-API only)"
 requires-python = ">=3.12"
 dependencies = [

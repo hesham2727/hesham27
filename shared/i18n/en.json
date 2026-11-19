@@ -261,5 +261,10 @@
   "count.comments": "Comments",
   "count.media": "Media",
   "count.sources": "Sources",
-  "count.verified": "Verified"
+  "count.verified": "Verified",
+  "startup.starting": "Starting FBOSINT…",
+  "startup.failed": "The application could not connect to its server.",
+  "startup.log": "Diagnostic log",
+  "startup.retry": "Retry",
+  "startup.offline": "Continue offline"
 }

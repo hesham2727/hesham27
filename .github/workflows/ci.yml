@@ -91,6 +91,19 @@ jobs:
           $p = Start-Process "C:\FBOSINT-test\FBOSINT.exe" -ArgumentList "--self-test" -Wait -PassThru
           Get-Content C:\installed-selftest.log
           if ($p.ExitCode -ne 0) { throw "installed self-test failed" }
+          # Regression: first launch on a PC with a Windows (Internet Options) proxy and port 8765 already taken
+          $is = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+          Set-ItemProperty $is ProxyEnable 1
+          Set-ItemProperty $is ProxyServer "127.0.0.1:9"
+          $blocker = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8765)
+          $blocker.Start()
+          $env:FBO_SELFTEST_LOG = "C:\installed-selftest-proxy.log"
+          $p = Start-Process "C:\FBOSINT-test\FBOSINT.exe" -ArgumentList "--self-test" -Wait -PassThru
+          Get-Content C:\installed-selftest-proxy.log
+          $blocker.Stop()
+          Set-ItemProperty $is ProxyEnable 0
+          if ($p.ExitCode -ne 0) { throw "installed self-test failed with system proxy + busy port" }
+          if (-not (Select-String -Path C:\installed-selftest-proxy.log -Pattern "port 87(6[6-9]|[7-9]\d)|port 18")) { throw "expected automatic port change" }
           $env:FBO_DATA_DIR = "C:\fbo-server-test"
           $srv = Start-Process "C:\FBOSINT-test\FBOSINT-Server.exe" -ArgumentList "serve","--port","8799" -PassThru
           $ok = $false

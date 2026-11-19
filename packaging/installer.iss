@@ -2,7 +2,7 @@
 ; Compile:  iscc packaging\installer.iss   (after PyInstaller produced dist\FBOSINT)
 #define AppName "FBOSINT Analyzer"
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.0.1"
 #endif
 #define AppPublisher "FBOSINT"
 #define AppExe "FBOSINT.exe"
