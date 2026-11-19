@@ -20,6 +20,30 @@ from pathlib import Path
 
 os.environ.setdefault("TAHQIQ_MODE", "desktop")
 
+
+def _ensure_std_streams() -> None:
+    """A windowed (no-console) Windows build starts with sys.stdout/stderr = None.
+
+    Uvicorn's logging setup calls sys.stdout.isatty() and would crash, so send
+    all output to <data dir>/logs/desktop.log instead.
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    base = os.environ.get("TAHQIQ_DATA_DIR")
+    if not base:
+        local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        base = str(Path(local) / "Tahqiq") if sys.platform == "win32" else str(Path.home() / ".tahqiq")
+    log_dir = Path(base) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stream = open(log_dir / "desktop.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+    if sys.stdout is None:
+        sys.stdout = stream
+    if sys.stderr is None:
+        sys.stderr = stream
+
+
+_ensure_std_streams()
+
 # Make the backend package importable when running from source.
 _HERE = Path(__file__).resolve().parent
 if not getattr(sys, "frozen", False):

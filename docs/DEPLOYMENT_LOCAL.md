@@ -9,6 +9,7 @@ All options below are free and work without Internet access (except map backgrou
 3. Launch **Tahqiq**. On first launch create the administrator account.
 
 * Data: `%LOCALAPPDATA%\Tahqiq\tahqiq.db` (SQLite). Uninstalling does **not** delete it.
+* Diagnostic log: `%LOCALAPPDATA%\Tahqiq\logs\desktop.log` (the windowed app has no console).
 * Backup: close the app, copy `tahqiq.db` (and `tahqiq.db-wal` if present) to a safe place.
 * The installer is **not code-signed** (a code-signing certificate is a paid item). Windows SmartScreen will show "Windows protected your PC" → *More info* → *Run anyway*.
 

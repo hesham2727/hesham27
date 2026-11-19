@@ -31,10 +31,30 @@ jobs:
       - run: cd frontend && npm ci && npm run build
         shell: bash
       - run: pyinstaller desktop/tahqiq.spec --noconfirm --distpath dist --workpath build
+      - name: Smoke-test the windowed Tahqiq.exe (must start backend and render the UI)
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP "tahqiq-smoke"
+          $env:TAHQIQ_DATA_DIR = $data
+          $env:TAHQIQ_DESKTOP_SMOKE = "1"
+          $p = Start-Process -FilePath "dist\Tahqiq\Tahqiq.exe" -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); Write-Error "Tahqiq.exe did not finish within 180 s" }
+          $log = Join-Path $data "logs\desktop.log"
+          if (Test-Path $log) { Get-Content $log -Tail 40 }
+          if (-not (Test-Path $log) -or -not (Select-String -Path $log -Pattern "LOAD_OK" -Quiet)) {
+            Write-Error "Desktop smoke test failed: LOAD_OK not found"; exit 1
+          }
+          if (-not (Test-Path (Join-Path $data "tahqiq.db"))) { Write-Error "Database was not created"; exit 1 }
+          Write-Host "Desktop smoke test passed"
       - name: Build installer (Inno Setup is pre-installed on windows-latest runners)
         run: iscc desktop\installer.iss
         shell: cmd
+      - name: Installer checksum
+        shell: pwsh
+        run: Get-FileHash dist\installer\*.exe -Algorithm SHA256 | Format-List | Tee-Object dist\installer\SHA256.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Tahqiq-Windows-Installer
-          path: dist/installer/*.exe
+          path: |
+            dist/installer/*.exe
+            dist/installer/SHA256.txt
